@@ -1,4 +1,18 @@
-﻿using System;
+﻿﻿//*********************************************************
+//
+// Copyright (c) Microsoft. All rights reserved.
+// This code is licensed under the MIT License (MIT).
+// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
+// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
+// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
+// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
+//
+//*********************************************************
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Security.Policy;
+using System.Threading.Tasks;
+using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -42,10 +56,10 @@ namespace SerialNumber {
 
         public String Get() { return Only.BarCodeText.Text; }
 
-        private async void GetBarcodeScanner() {
+        private async void GetBarcodeScannerNew() {
             DeviceInformationCollection dic = await DeviceInformation.FindAllAsync(BarcodeScanner.GetDeviceSelector());
             DeviceInformation di = dic.FirstOrDefault();
-            if (di != null)  _scanner = await BarcodeScanner.FromIdAsync(di.Id);
+            if (di != null) _scanner = await BarcodeScanner.FromIdAsync(di.Id);
             if (_scanner == null) throw new InvalidOperationException("Barcode scanner not found.");
             _claimedScanner = await _scanner.ClaimScannerAsync(); // Claim exclusively.
             if (_claimedScanner == null) throw new InvalidOperationException("Barcode scanner not found.");
@@ -86,60 +100,45 @@ namespace SerialNumber {
             }
         }
 
-﻿//*********************************************************
-//
-// Copyright (c) Microsoft. All rights reserved.
-// This code is licensed under the MIT License (MIT).
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
-//
-//*********************************************************
-//using System.Collections.Generic;
-//using System.ComponentModel;
-//using System.Security.Policy;
-//using System.Threading.Tasks;
+        private async void GetBarcodeScanner() {
+            _scanner = await GetFirstBarcodeScannerAsync();
+            if (_scanner == null) throw new InvalidOperationException("Barcode scanner not found.");
+            _claimedScanner = await _scanner.ClaimScannerAsync(); // Claim exclusively.
+            if (_claimedScanner == null) throw new InvalidOperationException("Barcode scanner not found.");
+            _claimedScanner.ReleaseDeviceRequested += ClaimedScanner_ReleaseDeviceRequested;
+            _claimedScanner.DataReceived += ClaimedScanner_DataReceived;
+            _claimedScanner.ErrorOccurred += ClaimedScanner_ErrorOccurred;
+            _claimedScanner.IsDecodeDataEnabled = true; // Decode raw data from scanner and sends the ScanDataLabel and ScanDataType in the DataReceived event.
+            await _claimedScanner.EnableAsync(); // Scanner must be enabled in order to receive the DataReceived event.
+        }
 
-        //private async void GetBarcodeScannerOld() {
-        //    _scanner = await GetFirstBarcodeScannerAsync();
-        //    if (_scanner == null) throw new InvalidOperationException("Barcode scanner not found.");
-        //    _claimedScanner = await _scanner.ClaimScannerAsync(); // Claim exclusively.
-        //    if (_claimedScanner == null) throw new InvalidOperationException("Barcode scanner not found.");
-        //    _claimedScanner.ReleaseDeviceRequested += ClaimedScanner_ReleaseDeviceRequested;
-        //    _claimedScanner.DataReceived += ClaimedScanner_DataReceived;
-        //    _claimedScanner.ErrorOccurred += ClaimedScanner_ErrorOccurred;
-        //    _claimedScanner.IsDecodeDataEnabled = true; // Decode raw data from scanner and sends the ScanDataLabel and ScanDataType in the DataReceived event.
-        //    await _claimedScanner.EnableAsync(); // Scanner must be enabled in order to receive the DataReceived event.
-        //}
+        private static async Task<BarcodeScanner> GetFirstBarcodeScannerAsync(PosConnectionTypes connectionTypes = PosConnectionTypes.Local) {
+            return await GetFirstDeviceAsync(BarcodeScanner.GetDeviceSelector(connectionTypes), async (id) => await BarcodeScanner.FromIdAsync(id));
+        }
 
-        //private static async Task<BarcodeScanner> GetFirstBarcodeScannerAsync(PosConnectionTypes connectionTypes = PosConnectionTypes.Local) {
-        //    return await GetFirstDeviceAsync(BarcodeScanner.GetDeviceSelector(connectionTypes), async (id) => await BarcodeScanner.FromIdAsync(id));
-        //}
+        private static async Task<T> GetFirstDeviceAsync<T>(String selector, Func<String, Task<T>> convertAsync) where T : class {
+            TaskCompletionSource<T> completionSource = new TaskCompletionSource<T>();
+            List<Task> pendingTasks = new List<Task>();
+            DeviceWatcher watcher = DeviceInformation.CreateWatcher(selector);
 
-        //private static async Task<T> GetFirstDeviceAsync<T>(String selector, Func<String, Task<T>> convertAsync) where T : class {
-        //    TaskCompletionSource<T> completionSource = new TaskCompletionSource<T>();
-        //    List<Task> pendingTasks = new List<Task>();
-        //    DeviceWatcher watcher = DeviceInformation.CreateWatcher(selector);
+            watcher.Added += (DeviceWatcher sender, DeviceInformation device) => {
+                pendingTasks.Add(((Func<String, Task>)(async (id) => {
+                    T t = await convertAsync(id);
+                    if (t != null) completionSource.TrySetResult(t);
+                }))(device.Id));
+            };
 
-        //    watcher.Added += (DeviceWatcher sender, DeviceInformation device) => {
-        //        pendingTasks.Add(((Func<String, Task>)(async (id) => {
-        //            T t = await convertAsync(id);
-        //            if (t != null) completionSource.TrySetResult(t);
-        //        }))(device.Id));
-        //    };
+            watcher.EnumerationCompleted += async (DeviceWatcher sender, Object args) => {
+                await Task.WhenAll(pendingTasks);
+                completionSource.TrySetResult(null);
+            };
 
-        //    watcher.EnumerationCompleted += async (DeviceWatcher sender, Object args) => {
-        //        await Task.WhenAll(pendingTasks);
-        //        completionSource.TrySetResult(null);
-        //    };
-
-        //    watcher.Removed += (DeviceWatcher sender, DeviceInformationUpdate args) => { }; // Event must be "handled" to enable realtime updates; empty block suffices.
-        //    watcher.Updated += (DeviceWatcher sender, DeviceInformationUpdate args) => { }; // Ditto.
-        //    watcher.Start();
-        //    T result = await completionSource.Task;
-        //    watcher.Stop();
-        //    return result;
-        //}
+            watcher.Removed += (DeviceWatcher sender, DeviceInformationUpdate args) => { }; // Event must be "handled" to enable realtime updates; empty block suffices.
+            watcher.Updated += (DeviceWatcher sender, DeviceInformationUpdate args) => { }; // Ditto.
+            watcher.Start();
+            T result = await completionSource.Task;
+            watcher.Stop();
+            return result;
+        }
     }
 }
