@@ -10,9 +10,9 @@ namespace SerialNumber {
             String serialNumber;
             while (true) {
                 try {
-                     SerialNumberDialog.Only.Set("01BB2-12345");
-                    serialNumber = SerialNumberDialog.Only.ShowDialog().Equals(DialogResult.OK) ? SerialNumberDialog.Only.Get() : String.Empty;
-                    SerialNumberDialog.Only.Hide();
+                     ABT_SerialNumberDialog.Only.Set("01BB2-12345");
+                    serialNumber = ABT_SerialNumberDialog.Only.ShowDialog().Equals(DialogResult.OK) ? ABT_SerialNumberDialog.Only.Get() : String.Empty;
+                    ABT_SerialNumberDialog.Only.Hide();
                     _ = MessageBox.Show($"Serial # is '{serialNumber}'.", "Serial #", MessageBoxButtons.OK);
                 } catch (Exception e) {
                     _ = MessageBox.Show(e.InnerException.Message, "Oops!", MessageBoxButtons.OK);
